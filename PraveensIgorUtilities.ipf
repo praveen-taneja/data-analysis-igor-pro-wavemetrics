@@ -18016,7 +18016,7 @@ Function pt_MakeNAnovaRW()
 //Export:
 //1. Save table copy as space-delimited text.
 
-String OutDataNamewPath, DataTableName, LabelsTableName, DataWList, LabelsWList
+String OutDataName, DataTableName, LabelsTableName, DataWList, LabelsWList
 Variable DataWListN, LabelsWListN
 Variable i, j, k, NFactors, NPntsDataW, CurrNPntsFactorW
 
@@ -18038,9 +18038,9 @@ If (WaveExists(AnalParNamesW) &&  WaveExists(AnalParW) == 0)
 	Abort	"Cudn't find the parameter waves  pt_MakeNAnovaRWParW and/or pt_MakeNAnovaRWParNamesW!!!"
 EndIf
 
-DataTableName		= AnalParW[0]
-LabelsTableName	= AnalParW[1]
-OutDataNamewPath	= 	AnalParW[2]
+DataTableName		= AnalParW[0]  // eg. InstFreq
+LabelsTableName	= AnalParW[1] // eg. FI_ScalarParsTransposeTable
+OutDataName	= 	AnalParW[2] // eg. InstFreq_long
 
 
 PrintAnalPar("pt_MakeNAnovaRW")
@@ -18062,11 +18062,11 @@ EndIf
 Wave /T AllFactorsW = $StringFromList(0, LabelsWList, ";")	// 1st labels column has names of all factors
 NFactors = NumPnts(AllFactorsW)   
 
-//Make /O/N=0 $OutDataNamewPath		// make an empty output wave. don't want to append to a pre-existing wave.
-//Wave OutDataw = $OutDataNamewPath	// output data wave
+//Make /O/N=0 $OutDataName		// make an empty output wave. don't want to append to a pre-existing wave.
+//Wave OutDataw = $OutDataName	// output data wave
 
-Make /O/N=0/T $OutDataNamewPath		// make an empty output wave. don't want to append to a pre-existing wave.
-Wave /T OutDataw = $OutDataNamewPath	// output data wave
+Make /O/N=0/T $OutDataName		// make an empty output wave. don't want to append to a pre-existing wave.
+Wave /T OutDataw = $OutDataName	// output data wave
 
 // for each data column, append data to concatenated data column and also append labels for all factors. 
 
@@ -18153,7 +18153,7 @@ If (WaveExists(AnalParNamesW) &&  WaveExists(AnalParW) == 0)
 EndIf
 
 DataNamewPath		=	AnalParW[0]
-OutDataNamewPath	= 	AnalParW[1]
+OutDataNamewPath	= 	AnalParW[1]	// this may have to be without path. Check in pt_MakeNAnovaRW above!!!!!!
 LabelsList			=	AnalParW[2]
 DestWList			=	AnalParW[3]
 
