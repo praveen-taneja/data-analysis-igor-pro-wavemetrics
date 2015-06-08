@@ -11,7 +11,7 @@
 // CHECKED IF ANY OF THE USED FUNCTIONS HAS BEEN ALTERED AND IF PART OR WHOLE OF THAT DATA NEEDS TO BE ANALYSED.
 // ANALYSIS CAN ALSO CHANGE IF FUNCTION REMAINS THE SAME BUT PARAMETER VALUES ARE DIFFERENT. THE SURESHOT WAY OF 
 // CHECKING THAT IS TO ACTUALLY LOOK AT THE PARAMETER VALUES USED AND MAKE SURE THEY ARE WHAT THEY SHOULD BE. IN
-// GENERAL IF ANALYSIS IS REDONE JUST BEFORE FINALIZING IT, IT SHOULD TAKE CARE OF BOTH CHANGES IN FUNCTIONS AND
+// GENERAL IF ANALYSIS IS REDONE JUST BEFORE FINAptLIZING IT, IT SHOULD TAKE CARE OF BOTH CHANGES IN FUNCTIONS AND
 //PARAMETER VALUES
 
 //1.  Coded pt_CalRsRinCmVmIClampVarPar1() which is a wrapper for pt_CalRsRinCmVmIClamp. As in current clamp Rs measurement  is difficult
@@ -26878,19 +26878,36 @@ Return ListObjs
 End
 
 Function pt_CalFISlope()
+
+//=======06_02_15=======//
+//fit_start = w_ITh0// -DimDelta(w, 0)   // start fit from first non-zero value.
+//=======06_02_15=======//
+//=======05_30_15=======//
+// modified to use curve_fit which can fit waves with NaNs (eg. in instantaneous  freq).
+// also allowed for max range by setting CurrRangeAboveThresh = "" or "inf" for max range.
+// still keeping intercept as manually calculated and not fitted intercept as sometimes fit is not accurate 
+// and also the fitted intercept will under estimate the current thresh.
+// if the fit fails, V_FitError is set = 1, in which case slope = NaN. Note V_FitError variable needs to be manually created.
+// If fit_start + CurrRangeAboveThresh > x_max; set CurrRangeAboveThresh = x_max - fit_start
+// also show fit (code from pt_CurveFitEdit())
+//=======05_30_15=======//
+
 // also calculate max freq and current at which freq is max. 10/29/14
 // calculate current threshold and slope of FI curves. Partly based on pt_LevelCross
 // current thresh - 1st non zero-spike
 
+
 String DataWaveMatchStr, SubFldr, OutWBaseName
 Variable CurrRangeAboveThresh, InterpCorr, DisplayFit	
 
-String	WList, WNameStr
+String	WList, WNameStr, TraceNameStr
 Variable	Numwaves, i, LevelVal, NPnts, j
 Variable SkipW=0, slope, intercept
+Variable x_max, fit_start, w_ITh0
+Variable V_FitError =0, CurrRangeAboveThresh0 
 String  LastUpdatedMM_DD_YYYY = "07/18/2014"
 
-Wave /T AnalParNamesW		=	$pt_GetParWave("pt_CalFISlope", "ParNamesW")		// check in local folder first 07/23/2007
+Wave /T AnalParNamesW	=	$pt_GetParWave("pt_CalFISlope", "ParNamesW")		// check in local folder first 07/23/2007
 Wave /T AnalParW			=	$pt_GetParWave("pt_CalFISlope", "ParW")
 
 
@@ -26906,10 +26923,10 @@ Print "*********************************************************"
 
 DataWaveMatchStr		=	AnalParW[0]
 SubFldr					=	AnalParW[1]
-CurrRangeAboveThresh	= 	Str2Num(AnalParW[2])
+CurrRangeAboveThresh	= 	Str2Num(AnalParW[2])   // set = "" or "inf" for max range. 05_30_15
 InterpCorr				= 	Str2Num(AnalParW[3])
 OutWBaseName			= 	AnalParW[4]
-//DisplayFit				= 	Str2Num(AnalParW[5])
+DisplayFit				= 	Str2Num(AnalParW[5])
 
 PrintAnalPar("pt_CalFISlope")
 
@@ -26930,45 +26947,118 @@ Wave w_CurrAtMaxFreq = $(GetDataFolder(1)+SubFldr+OutWBaseName+"CurrAtMaxFreq")
 w_MaxFreq = Nan
 w_CurrAtMaxFreq = Nan
 
+CurrRangeAboveThresh0 = CurrRangeAboveThresh
+
 For (i=0; i<Numwaves; i+=1)
 	WNameStr=StringFromList(i, WList, ";")
 	Wave w=$(GetDataFolder(1)+SubFldr+WNameStr)
-	
+	CurrRangeAboveThresh = CurrRangeAboveThresh0
 	NPnts=NumPnts(w)
 	j=0; SkipW=0; LevelVal=Nan
 	Do
 		If (j<NPnts) // not yet reached last point in the wave
-			If (w[j]!=0)
+			//If (w[j]!=0)
+			If (NumType(w[j]) == 0 && w[j]!=0) // NumType(w[j]) == 0 so that we can ignore NaNs
 				LevelVal = w[j]
+				// calculate x value for crossing right here rather than later using Findlevel 05_30_15
+				w_ITh[i] = DimOffset(w, 0) + j*DimDelta(w, 0)
+				w_ITh0 = w_ITh[i] 
+				If (InterpCorr)
+					w_ITh[i] = w_ITh[i] -(DimDelta(w, 0))*0.5	// 12/06/12
+				EndIf 
 				Break
 			EndIf
 		Else
-			Print "Warning: All values in wave", WNameStr, "are =0 or the wave has 0 number of points"
+			Print "Warning: All values in wave", WNameStr, "are =0 or the wave has 0 number of points. Skipping wave"
 			SkipW=1
+			//w_ITh0 = NaN
 			Break
 		EndIf
 		j+=1
 	While (1)
 
+//If (!SkipW)  05_30_15
+//	print 'LevelVal', LevelVal
+//	Findlevel /Q/edge=1 w, LevelVal
+//	If (V_flag==0)
+		//w_ITh0rig  =  V_LevelX
+//		w_ITh[i] = V_LevelX
+//		If (InterpCorr)
+//			w_ITh[i] = V_LevelX-(DimDelta(w, 0))*0.5	// 12/06/12
+//		EndIf
+//	Else
+//		Print "Warning: Level crossing not found for",WNameStr
+		//w_ITh0rig = NaN
+//		w_ITh[i] = NaN
+//	EndIf
+//EndIf
+
 If (!SkipW)
-	Findlevel /Q/edge=1 w, LevelVal
-	If (V_flag==0)
-		w_ITh[i] = V_LevelX
-		If (InterpCorr)
-			w_ITh[i] = V_LevelX-(DimDelta(w, 0))*0.5	// 12/06/12
-		EndIf
-	Else
-		Print "Warning: Level crossing not found for",WNameStr
-		w_ITh[i] = NaN
-	EndIf
+fit_start = w_ITh0// -DimDelta(w, 0)   // start fit from first non-zero value.
+// if nothing was specified in CurrRangeAboveThresh, then Str2Num(CurrRangeAboveThresh) = NaN. Set = max range.
+
+x_max = DimOffset(w, 0) + (NumPnts(w) -1)*DimDelta(w, 0)
+
+If (NumType(CurrRangeAboveThresh0) !=0)
+	CurrRangeAboveThresh = x_max - fit_start
 EndIf
-print "Fitting slope in range", w_ITh[i] ,w_ITh[i] + CurrRangeAboveThresh
-pt_linearfit(w,w_ITh[i] ,w_ITh[i] + CurrRangeAboveThresh,slope,intercept)
-w_Slp = slope
+
+If (   (fit_start + CurrRangeAboveThresh0) > x_max)
+	CurrRangeAboveThresh = x_max - fit_start
+EndIf
+
+print "Curr. thresh =", w_ITh[i],". Fitting slope in range", fit_start  ,fit_start + CurrRangeAboveThresh, "in", WNameStr
+
+Duplicate /O/R=(fit_start  ,fit_start + CurrRangeAboveThresh) w, $(GetDataFolder(1)+SubFldr+"w_FtRng")
+Wave w_FtRng= $(GetDataFolder(1)+SubFldr+"w_FtRng")
+
+Duplicate /O w_FtRng, $(GetDataFolder(1)+SubFldr+"fit_"+WNameStr)
+Wave FitW=$(GetDataFolder(1)+SubFldr+"fit_"+WNameStr)
+FitW=Nan
+	
+//pt_linearfit(w,w_ITh[i] ,w_ITh[i] + CurrRangeAboveThresh,slope,intercept)
+CurveFit/Q/NTHR=0/TBOX=0/W=2 line w_FtRng /D=FitW
+Wave CoefW= W_Coef 
+If (V_FitError!=0)
+	print V_FitError
+	V_FitError=0
+	Print "Fitting error in", WNameStr,". Coeff and Sigma set = NAN"
+	Else
+	w_Slp[i] = CoefW[1]
+EndIf
+
+
+
+If (DisplayFit)
+	Display
+	DoWindow pt_CalFISlopeDisplay
+	If (V_Flag)
+		DoWindow /F pt_CalFISlopeDisplay
+//		Sleep 00:00:02
+		DoWindow /K pt_CalFISlopeDisplay
+	EndIf
+	DoWindow /C pt_CalFISlopeDisplay
+	AppendToGraph /W=pt_CalFISlopeDisplay w
+	TraceNameStr=WNameStr
+	ModifyGraph /W=pt_CalFISlopeDisplay rgb($TraceNameStr)=(65280,0,0)
+	AppendToGraph /W=pt_CalFISlopeDisplay w_FtRng
+	TraceNameStr="w_FtRng"
+	ModifyGraph /W=pt_CalFISlopeDisplay rgb($TraceNameStr)=(0,0,0)
+	DoUpdate
+//	Sleep /T 120
+
+	AppendToGraph FitW
+	ModifyGraph /W=pt_CalFISlopeDisplay lsize=2
+	TraceNameStr="fit_"+WNameStr
+	ModifyGraph /W=pt_CalFISlopeDisplay rgb($TraceNameStr)=(0,43520,65280)
+	DoUpdate
+	Sleep /T 30
+EndIf
 
 Wavestats /Q w
-w_MaxFreq = V_max
-w_CurrAtMaxFreq = V_maxloc
+w_MaxFreq[i] = V_max
+w_CurrAtMaxFreq[i] = V_maxloc
+EndIf
 EndFor
 
 End
