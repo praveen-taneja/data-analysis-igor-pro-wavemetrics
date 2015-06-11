@@ -26879,6 +26879,7 @@ End
 
 Function pt_CalFISlope()
 
+// added CurrFitTh - current threshold from linear fit = -c/m, where c = y intercept and m is slope 06/11/15
 //=======06_02_15=======//
 //fit_start = w_ITh0// -DimDelta(w, 0)   // start fit from first non-zero value.
 //=======06_02_15=======//
@@ -26935,11 +26936,18 @@ Numwaves=ItemsInList(WList, ";")
 
 Print "Finding FI slope, current thresh., max. freq., and max. freq. current for, N =", Numwaves, WList
 
-Make /O/N=(Numwaves) $(GetDataFolder(1)+SubFldr+OutWBaseName+"CurrTh"), $(GetDataFolder(1)+SubFldr+OutWBaseName+"Slope")
+Make /O/N=(Numwaves) $(GetDataFolder(1)+SubFldr+OutWBaseName+"CurrTh"),  $(GetDataFolder(1)+SubFldr+OutWBaseName+"Slope")
+
+
 Wave w_ITh = $(GetDataFolder(1)+SubFldr+OutWBaseName+"CurrTh")
 Wave w_Slp = $(GetDataFolder(1)+SubFldr+OutWBaseName+"Slope")
 w_ITh = Nan
 w_Slp = Nan
+
+//added CurrFitTh - current threshold from linear fit = -c/m, where c = y intercept and m is slope 06/11/15
+Make /O/N=(Numwaves) $(GetDataFolder(1)+SubFldr+OutWBaseName+"CurrFitTh")
+Wave w_IFitTh = $(GetDataFolder(1)+SubFldr+OutWBaseName+"CurrFitTh")
+w_IFitTh = NaN
 
 Make /O/N=(Numwaves) $(GetDataFolder(1)+SubFldr+OutWBaseName+"MaxFreq"), $(GetDataFolder(1)+SubFldr+OutWBaseName+"CurrAtMaxFreq")
 Wave w_MaxFreq = $(GetDataFolder(1)+SubFldr+OutWBaseName+"MaxFreq")
@@ -27025,6 +27033,7 @@ If (V_FitError!=0)
 	Print "Fitting error in", WNameStr,". Coeff and Sigma set = NAN"
 	Else
 	w_Slp[i] = CoefW[1]
+	w_IFitTh[i] = -CoefW[0]/CoefW[1] // y = mx + c => at y = 0, x = -c/m
 EndIf
 
 
