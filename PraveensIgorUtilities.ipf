@@ -11637,6 +11637,7 @@ Submenu "WaveFilters"
 "pt_RemoveOutLiers1", pt_EditFuncPars("pt_RemoveOutLiers1")
 "pt_ConvNansToZeros", pt_EditFuncPars("pt_ConvNansToZeros")
 "Use pt_FilterWave to filter out values < and > specified cutoffs"
+"pt_NanIndices", pt_EditFuncPars("pt_NanIndices")
 End
 "pt_GaussianFilterData",pt_EditFuncPars("pt_GaussianFilterData")
 "pt_InsertPoints",pt_EditFuncPars("pt_InsertPoints")
@@ -11865,6 +11866,7 @@ End
 SubMenu "WaveFilters"
 "pt_FilterWave1", pt_AnalWInFldrs2("pt_FilterWave1")
 "pt_RemoveOutLiers1", pt_AnalWInFldrs2("pt_RemoveOutLiers1")
+"pt_NanIndices", pt_AnalWInFldrs2("pt_NanIndices")
 
 End 
 "pt_UpdateCellInfo",pt_AnalWInFldrs2("pt_UpdateCellInfo")	
@@ -26191,12 +26193,30 @@ For (i=0; i<Nx; i+=1)
 	SetScale /P x, OutStartX, OutDelX, $GetDataFolder(1)+SubFldr+wYStr+"_ip"
 	Print "X, Y Wavenames : ", wXStr, wYStr
 	pt_FilterNonMonotonicXVals(wXStr, wYStr, SubFldr, sort_order)
+	Wave w_mX = $GetDataFolder(1)+SubFldr+wXStr+"mX"
 	Interpolate2/T=1/E=2/I=3/Y=$(GetDataFolder(1)+SubFldr+wYStr+"_ip") $GetDataFolder(1)+SubFldr+wXStr+"mX", $GetDataFolder(1)+SubFldr+wYStr+"mY"
 	wave wInterp = $(GetDataFolder(1)+SubFldr+wYStr+"_ip")
 	// set all points outside orig. data = NaN
 	Wavestats /Q $GetDataFolder(1)+SubFldr+wXStr+"mX"
 	OutStartX0			= V_Min
 	OutEndX0			= V_Max
+	
+	// Also exclude x-values above and below which the values of y wave were not a regular number.
+	Wave /T NanIndicesParW	= $pt_GetParWave("pt_NanIndices", "ParW")
+	Duplicate /O/T NanIndicesParW, NanIndicesParW_orig
+	NanIndicesParW[0] = wYStr+"mY"//DataWaveMatchStr
+	NanIndicesParW[1] = SubFldr//SubFldr
+	pt_NanIndices()
+	Duplicate /O/T NanIndicesParW_orig, NanIndicesParW
+	KillWaves /Z NanIndicesParW_orig
+	Wave w_ni =  $GetDataFolder(1)+SubFldr+wYStr+"mY_ni"
+	If (OutStartX0 <  w_mX[w_ni[0]] )
+		OutStartX0 = w_mX[w_ni[0]]
+	EndIf
+	If (OutEndX0 > w_mX[w_ni[NumPnts(w_ni) - 1]] )
+		OutEndX0 = w_mX[w_ni[NumPnts(w_ni) - 1]]
+	EndIf
+	KillWaves /Z w_ni
 	Print "OutStartX0, OutEndX0 =", OutStartX0, OutEndX0
 	For (j=0; j<NumPnts(wInterp); j+=1)
 		If ( (OutStartX + j*OutDelX) < OutStartX0 || (OutStartX + j*OutDelX) > OutEndX0)
@@ -26217,11 +26237,68 @@ For (i=0; i<Nx; i+=1)
 		ModifyGraph /W=pt_InterPDisplay mode=4
 		ModifyGraph /W=pt_InterPDisplay  marker($(wYStr+"_ip"))=41
 		DoUpdate /W = pt_InterPDisplay 
-		Sleep /T 30
-		//DoWindow /K pt_InterPDisplay 
+		Sleep /T 10
+		DoWindow /K pt_InterPDisplay 
 	EndIf
+	KillWaves /Z $GetDataFolder(1)+SubFldr+wYStr+"mY", $GetDataFolder(1)+SubFldr+wXStr+"mX"
 EndFor
 KillWaves /Z XWaveFull, PntsPerWave		
+End
+
+Function pt_NanIndices()
+	// return indexes for which $WNameStr == NaN
+	
+String DataWaveMatchStr, SubFldr
+String WList, WStr
+Variable N, NPnts, i
+
+
+String LastUpdatedMM_DD_YYYY="07_21_2015"
+
+Print "*********************************************************"
+Print "pt_NanIndices last updated on", LastUpdatedMM_DD_YYYY
+Print "*********************************************************"
+
+	
+Wave /T ParNamesW	=$pt_GetParWave("pt_NanIndices", "ParNamesW")
+Wave /T ParW			=$pt_GetParWave("pt_NanIndices", "ParW")
+
+If (WaveExists(ParNamesW)&&WaveExists(ParW) == 0)
+	Abort	"Cudn't find the parameter waves pt_NanIndicesParW and/or pt_NanIndicesParNamesW!!!"
+EndIf
+
+DataWaveMatchStr	=ParW[0]
+SubFldr				=ParW[1]
+
+PrintAnalPar("pt_NanIndices")
+
+WList	=	pt_SortWavesInFolder(DataWaveMatchStr, GetDataFolder(1)+SubFldr)
+N = ItemsInList(WList, ";")
+
+Print "Current folder name", GetDataFolder(1)
+Print "Calculating NaN indices for waves, N=", N, WList
+
+For (i=0; i<N; i+=1)
+	WStr = StringFromList(i, WList, ";")
+	Wave w = $GetDataFolder(1)+SubFldr+WStr
+	
+	Make /O/N=0 $GetDataFolder(1)+SubFldr+WStr+"_ni" // nan indices
+	Wave w_ni = $GetDataFolder(1)+SubFldr+WStr+"_ni"
+	
+	Make /O/N=1 $GetDataFolder(1)+SubFldr+WStr+"_ni0" // nan indices
+	Wave w_ni0 = $GetDataFolder(1)+SubFldr+WStr+"_ni0"
+	
+	NPnts = NumPnts(w)
+	For (i=0; i<NPnts; i+=1)
+		//print i, w[i]
+		If (NumType(w[i]) == 0 )
+			//print 'NaN', i
+			w_ni0[0] = i
+			Concatenate /NP {w_ni0}, w_ni
+		EndIf
+	EndFor
+	Killwaves /Z  w_ni0
+EndFor
 End
 
 Function pt_FilterNonMonotonicXVals(wXStr, wYStr, SubFldr, sort_order)
