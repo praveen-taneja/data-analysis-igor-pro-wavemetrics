@@ -9111,7 +9111,7 @@ For (i=0; i<NumWaves; i+=1)	// Start: iterate through NumWaves
 				Wave CropPksWi_k = $(GetDataFolder(1)+BaseNameStr+"CropPksF:"+BaseNameStr+"CropPksW"+Num2Str(i)+"_"+Num2Str(k))
 				Note /k CropPksWi_k "TraceName:"+WNameStr
 				//	Print MaxRiseXWi[j], MaxRiseXWi[j]-CropPreMaxSlpDelT, MaxRiseXWi[j]+CropPostMaxSlpDelT
-				Duplicate /O /R=(MaxRiseXWi[j]-CropPreMaxSlpDelT, MaxRiseXWi[j]+CropPostMaxSlpDelT) wRawB, CropPksWi_k  // align at max rise.
+				Duplicate /O /R=(MaxRiseXWi[j]-CropPreMaxSlpDelT, MaxRiseXWi	[j]+CropPostMaxSlpDelT) wRawB, CropPksWi_k  // align at max rise.
 				SetScale /P x,0,XDelta, CropPksWi_k
 				CropPksWi_k -= PreBLYWi[j]
 			EndIf
@@ -16072,7 +16072,7 @@ EndIf
 	ModifyGraph /W=pt_CurveFitDisplay rgb($TraceNameStr)=(0,43520,65280)
 	DoUpdate
 	Sleep /T 60
-	EndIf
+	EndIf 
 EndFor
 //If (DisplayFit	)
 //	AppendToGraph FitW
@@ -26140,7 +26140,7 @@ OutEndX				= Str2Num(ParW[5])
 DisplayInterp		= Str2Num(ParW[6])
 
 PrintAnalPar("pt_XYToWave2")
-DoAlert 0, "FYI: Interpolation is set to linear and not cubic spline. Also, the function now removes pairs of xy vals for non-monotinc x vals"
+//DoAlert 0, "FYI: Interpolation is set to linear and not cubic spline. Also, the function now removes pairs of xy vals for non-monotinc x vals"
 
 YWList	=	pt_SortWavesInFolder(YWaveMatchStr, GetDataFolder(1)+SubFldr)
 XWList	=	pt_SortWavesInFolder(XWaveMatchStr, GetDataFolder(1)+SubFldr)
@@ -27141,10 +27141,17 @@ If (DisplayFit)
 	Sleep /T 30
 EndIf
 
+DoWindow pt_CalFISlopeDisplay		// kill the last display window 11_11/13
+If (V_Flag)
+	DoWindow /K pt_CalFISlopeDisplay
+EndIf
+
 Wavestats /Q w
 w_MaxFreq[i] = V_max
 w_CurrAtMaxFreq[i] = V_maxloc
 EndIf
+
+Killwaves /z w_FtRng, FitW
 EndFor
 
 End
