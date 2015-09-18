@@ -1,5 +1,5 @@
 #pragma rtGlobals=1		// Use modern global access method.
-#include <Waves Average>
+//#include <Waves Average>
 //#include <XY Pair To Waveform>
 #Include <Remove Points>
 #Include <Power Spectral Density>
@@ -11549,9 +11549,10 @@ Submenu "SealTest"
 End
 "pt_CalSlope",pt_EditFuncPars("pt_CalSlope")
 "pt_CompareWFrmFldrs", pt_EditFuncPars("pt_CompareWFrmFldrs")
-Submenu "Concatenate waves"
+Submenu "Concatenate or split waves"
 "pt_ConctnWFrmFldrs", pt_EditFuncPars("pt_ConctnWFrmFldrs")
 "pt_ConctnWFrmFldrs1", pt_EditFuncPars("pt_ConctnWFrmFldrs1")
+"pt_split_waves", pt_EditFuncPars("pt_split_waves")
 End
 Submenu "FileConverters"
 	"pt_ConvertTextToBinary", pt_EditFuncPars("pt_ConvertTextToBinary")
@@ -11618,6 +11619,7 @@ Submenu "MoveData"
 "pt_DuplicateWToFldrs", pt_EditFuncPars("pt_DuplicateWToFldrs")
 "pt_LoadWFrmFldrs", pt_EditFuncPars("pt_LoadWFrmFldrs")
 "pt_LoadDataNthWave", pt_EditFuncPars("pt_LoadDataNthWave")
+"pt_load_abf", pt_EditFuncPars("pt_load_abf")
 "pt_MoveWaves",pt_EditFuncPars("pt_MoveWaves")
 "pt_MoveWavesMany",pt_EditFuncPars("pt_MoveWavesMany")
 " use  pt_SaveWFrmFldrs to save individual waves as IgorBinary or convert to DelimitedText"
@@ -27200,3 +27202,330 @@ Return wSrtPer[id]
 KillWaves /Z wSrtPer
 End
 
+Function pt_load_abf()
+// http://www.igorexchange.com/node/2566
+// can be used to convert abf files. Use pt_split_waves() to split created waves if needed
+// modified from pt_LoadDataRecursive2 and pt_SaveWFrmFldrs()
+String MatchStr, HDFolderPath, IgorFolderPath
+String WList, AllListStr, ListStr, WaveStr, file_name_no_ext
+Variable Numwaves, i, sampling_rateHz, y_multiplier, clampfit_modified	
+
+Wave /T ParNamesW	=$pt_GetParWave("pt_load_abf", "ParNamesW")
+Wave /T ParW		=$pt_GetParWave("pt_load_abf", "ParW")
+
+If (WaveExists(ParNamesW)&&WaveExists(ParW) == 0)
+	Abort	"Cudn't find the parameter waves  pt_load_abfParW and/or pt_load_abfParNamesW!!!"
+EndIf
+
+MatchStr			=ParW[0]
+HDFolderPath		=ParW[1]
+IgorFolderPath		=ParW[2]	// // No : at end
+clampfit_modified		=Str2Num(ParW[3]) 
+sampling_rateHz		=Str2Num(ParW[4])
+y_multiplier 			=Str2Num(ParW[5])
+
+PrintAnalPar("pt_load_abf")
+
+NewPath /O/Q/C SymblkHDFolderPath, HDFolderPath
+AllListStr= IndexedFile(SymblkHDFolderPath, -1, ".abf")
+ListStr = ListMatch(AllListStr, MatchStr)
+NumWaves = ItemsinList(ListStr)
+print Numwaves
+
+DoAlert 0, "still need to verify import parameters of GBLoadWave"
+
+For (i=0; i< NumWaves; i+=1)
+	WaveStr = StringFromList(i, ListStr, ";")
+	KillWaves /Z abf_tmp_file0
+	If (clampfit_modified == 0)
+		//integer files: (output from Clampex >v10.0.2)
+		//GBLoadWave/O/Q/B/V/N=wave/T={16,2}/Y={0, 1/32.768}/S=6144/W=2
+		//byte order = low first
+		//bytes header = 6144
+		//input = 16bit int
+		//output = single float
+		//scale = 1/32.768
+	
+		//GBLoadWave/O/B/N=abf_tmp_file/T={16,4}/W=1 /P = SymblkHDFolderPath WaveStr
+		GBLoadWave/O/B/V/N=abf_tmp_file/T={16,4}/W=1/S=6144 /P = SymblkHDFolderPath WaveStr
+	Else
+		//float files: (after clampfit >v10 modify)
+		//GBLoadWave/O/Q/B/V/N=wave/T={2,2}/Y={0, 1}/S=(32*112)/W=2
+		//header = 3584
+		//byte order = low
+		//input = single float
+		//output = single float
+		//scale = 1
+		
+		//GBLoadWave/O/B/N=abf_tmp_file/T={16,4}/W=1 /P = SymblkHDFolderPath WaveStr
+	EndIf
+	file_name_no_ext = RemoveEnding(WaveStr, ".abf")
+	Rename  abf_tmp_file0, $("c" + file_name_no_ext)
+	Wave w = $("c" + file_name_no_ext)
+	w = w*(20000/65536)*y_multiplier
+	SetScale /P x, 0,  (1/sampling_rateHz), w
+EndFor
+
+End
+
+Function pt_split_waves()
+// split all waves in specified folder into smaller waves
+// modified from pt_LoadDataRecursive2 and pt_SaveWFrmFldrs()
+String DataWaveMatchStr, IgorFldr	
+Variable split_num_pnts
+
+String WList, AllListStr, ListStr, WaveStr, file_name_no_ext
+Variable Numwaves, i , n_splits, start, j
+
+Wave /T ParNamesW	=$pt_GetParWave("pt_split_waves", "ParNamesW")
+Wave /T ParW		=$pt_GetParWave("pt_split_waves", "ParW")
+
+If (WaveExists(ParNamesW)&&WaveExists(ParW) == 0)
+	Abort	"Cudn't find the parameter waves  pt_split_wavesParW and/or pt_split_wavesParNamesW!!!"
+EndIf
+
+DataWaveMatchStr	=ParW[0]
+IgorFldr				=ParW[1]	// No : at end
+split_num_pnts		=Str2Num(ParW[2]) 
+
+PrintAnalPar("pt_split_waves")
+
+WList=pt_SortWavesInFolder(DataWaveMatchStr, IgorFldr)
+Numwaves=ItemsInList(WList, ";")
+
+Print "Splitting waves, N =", Numwaves
+
+For (i =0; i < Numwaves; i +=1)
+	WaveStr = StringFromList(i, WList, ";")
+	
+	Wave w = $IgorFldr + ":"+ Wavestr
+	n_splits = ceil(NumPnts(w)/split_num_pnts)
+	print WaveStr, "num_splits =", n_splits
+	start = 0
+	For (j = 0; j < n_splits; j +=1)
+		//NewName = 
+		Duplicate /O /R=[start, start + split_num_pnts - 1] w, $(IgorFldr + ":"+ WaveStr+"_"+pt_PadZeros2IntNum(j, 4))
+		wave w1 = $(IgorFldr + ":"+ WaveStr+"_"+pt_PadZeros2IntNum(j, 4))
+		SetScale /p x, 0, dimDelta(w1, 0),  w1
+		start = j * split_num_pnts
+	EndFor
+EndFor
+
+End
+
+
+
+Function pt_Abf2IgorV2_8t_w_import()
+
+// also check out pt_load_abf() and pt_split waves if this doesn't work.
+
+// modified to make EndX separate from LenX_ms. 11th Sept, 2015
+
+// modified from Use pt_Abf2IgorV2_8t() 10th Sept, 2015
+// Use pt_Abf2IgorV2_8t_w_import for importing, splitting, and saving. 10th Sept, 2015
+
+// GetGraphName inneuromatic conflicts with same function in Wave Arithmetic Panel from Igor. To avoid
+// loading it, start a new experiment and import procedure files and function parameters.
+
+  //Analysis parameters
+//  ****************************************************************************************
+//  DataWaveMatchStr  =  *
+//  HDFolderPath  =  C:Users:praveen.taneja:OneDrive:BDDravetSpontCurrents:sEPSC:NTG_sEPSC:
+//  SaveHDFolderPath  =  C:Users:praveen.taneja:OneDrive:BDDravetSpontCurrents:sEPSC:NTG_sEPSC:converted:
+//  LenX_ms  =  20000
+//  XScaling  =  0.25e-4
+// StartX_ms  =  1000
+ // EndX_ms  =  19000
+//  ****************************************************************************************
+
+
+//usage parameters 10th Sept, 2015
+  
+// Some files that were processed and saved as Abf files were not getting imported using NeuroMatic version2
+// Jason@thinkrandom (emailed around 11/22/13) sent new version 2.8 for mac (there is likely a separate one for windows). 
+// With the new version one can import multiple files. So modifying Abf2Igor to just save the files after data has been imported
+// using neuromatic GUI.
+
+
+// comments from pt_Abf2IgorV2_0
+// function to import all .abf files from an HD folder using neuromatic and save them as igor files. 
+// also the original wave can be split into multiple waves and scaled before saving.
+//Example usage: pt_Abf2Igor()
+//Example parameters
+//	DataWaveMatchStr  =  3N010000.abf
+// 	HDFolderPath  =  Macintosh HD:Users:taneja:Work:Analysis:MuckeLab:TauKO:mEPSC_CA3_BD_Data:abf_data_orig
+//  SavePrefix  =  c
+//  SaveHDFolderPath  =  Macintosh HD:Users:taneja:Work:Analysis:MuckeLab:TauKO:mEPSC_CA3_BD_Data:converted
+//  StartX_ms  =  40000
+//  LenX_ms  =  100000
+//  XScaling  =  1e-4
+
+// End comments from pt_Abf2Igor
+
+String SaveHDFolderPath, HDFolderPath, DataWaveMatchStr//, SavePrefix
+Variable StartX_ms, LenX_ms, XScaling, EndX_ms 
+String Fldrname, SaveNewWaveAs, OldDf, DataFoldersList, AllListStr, ListStr, WaveStr
+Variable i, j, X0, dX, dL, Nsplits, NumFolders, NumWaves, start0, end0
+
+Wave /T ParNamesW	=$("root:FuncParWaves:pt_Abf2Igor"+"ParNamesW")
+Wave /T ParW		=$("root:FuncParWaves:pt_Abf2Igor"+"ParW")
+
+DataWaveMatchStr	= ParW[0]  // with colon
+HDFolderPath		= ParW[1]
+//IgorFolderPath	= ParW[2]
+//SavePrefix			= ParW[2]
+SaveHDFolderPath	= ParW[2]
+LenX_ms 			= Str2Num(ParW[3]) // length of trace
+XScaling				= Str2Num(ParW[4])
+StartX_ms 			= Str2Num(ParW[5])
+EndX_ms 			= Str2Num(ParW[6])
+
+PrintAnalPar("pt_Abf2Igor")
+
+DoAlert 0, "Important: Choose concatenate waves option in popup EACH TIME while importing files"
+// import
+NewPath SymblkHDFolderPath, HDFolderPath
+AllListStr= IndexedFile(SymblkHDFolderPath, -1, ".abf")
+KillPath /Z SymblkHDFolderPath
+ListStr = ListMatch(AllListStr, DataWaveMatchStr)
+NumWaves = ItemsinList(ListStr)
+
+For (i=0; i< NumWaves; i+=1)
+	WaveStr = StringFromList(i, ListStr, ";")
+	// uncomment to use	
+// uncomment to use		NMImportFile( "new" , HDFolderPath+ WaveStr)
+EndFor
+
+Print "Imported waves, N= ", i, "from", HDFolderPath
+//Abort "aborted"
+
+// save
+OldDf = GetDataFolder(1)	
+SetDataFolder root:
+DataFoldersList = pt_ReturnObjList("root:", "nm*", 4)
+NumFolders = ItemsinList(DataFoldersList)
+NewPath /O/Q/C SymSaveHDFolderPath, SaveHDFolderPath
+For (i=0; i< NumFolders ; i+=1)
+	FldrName = StringFromList(i, DataFoldersList , ";")
+	If (WaveExists($"root:"+FldrName+":"+"C_RecordA0"))
+		Wave w = $"root:"+FldrName+":"+"C_RecordA0"
+		X0 = dimoffset(w, 0)
+		dL = dimSize(w, 0)
+		dX = dimdelta(w, 0)
+		Print "Length of trace (ms)", FldrName, dL*dX
+		//Nsplits = round(dL/(LenX_ms/dX))
+		Nsplits = ceil(dL/(LenX_ms/dX))  //11th Sept, 2015
+		Print "number of splits =", Nsplits
+		For (j = 0; j < Nsplits; j +=1)
+			start0 = StartX_ms + j*LenX_ms   //11th Sept, 2015
+			end0 = start0 + (EndX_ms - StartX_ms)   //11th Sept, 2015
+			print "duplicated wave between ", start0, end0, "ms"
+			Duplicate /O /R = (start0, end0) w,  $("root:"+FldrName+"_"+pt_PadZeros2IntNum(j, 4))
+			wave w1 = $("root:"+FldrName+"_"+pt_PadZeros2IntNum(j, 4))
+			SetScale /p x, 0, XScaling, w1
+			SaveNewWaveAs=FldrName+"_"+pt_PadZeros2IntNum(j, 4)+".ibw"//SaveHDFolderPath + ":" + SavePrefix+WaveStr+".ibw"
+		
+			Save /O /p=SymSaveHDFolderPath w1 as SaveNewWaveAs
+			Print "Saved files", FldrName+"_"+pt_PadZeros2IntNum(j, 4), "to",  SaveHDFolderPath
+			KillWaves /Z w1
+		EndFor
+	EndIf
+	Print "Processing folder, ", i, FldrName
+EndFor
+KillPath /Z SymSaveHDFolderPath
+
+SetDataFolder OldDf
+End
+
+
+
+Function pt_Abf2IgorV2_8t()
+
+// Use pt_Abf2IgorV2_8t_w_import for importing, splitting, and saving. 10th Sept, 2015
+
+// Use pt_Abf2IgorV2_8t splitting, and saving (after manual importing in case auto importing doesn't work). //10th Sept, 2015
+
+// GetGraphName inneuromatic conflicts with same function in Wave Arithmetic Panel from Igor. To avoid
+// loading it, start a new experiment and import procedure files and function parameters.
+
+
+//modified from pt_Abf2Igor 05/22/14
+
+//  Analysis parameters
+//  ****************************************************************************************
+//  SaveHDFolderPath  =  C:Users:praveen.taneja:OneDrive:BDDravetSpontCurrents:sEPSC:DravetTauKO_sEPSC:temp:
+//  StartX_ms  =  1000
+//  LenX_ms  =  20000  // length of split counting from zero
+//  XScaling  =  0.25e-4
+//  ****************************************************************************************
+  
+// Some files that were processed and saved as Abf files were not getting imported using NeuroMatic version2
+// Jason@thinkrandom (emailed around 11/22/13) sent new version 2.8 for mac (there is likely a separate one for windows). 
+// With the new version one can import multiple files. So modifying Abf2Igor to just save the files after data has been imported
+// using neuromatic GUI.
+
+
+// comments from pt_Abf2IgorV2_0
+// function to import all .abf files from an HD folder using neuromatic and save them as igor files. 
+// also the original wave can be split into multiple waves and scaled before saving.
+//Example usage: pt_Abf2Igor()
+//Example parameters
+//	DataWaveMatchStr  =  3N010000.abf
+// 	HDFolderPath  =  Macintosh HD:Users:taneja:Work:Analysis:MuckeLab:TauKO:mEPSC_CA3_BD_Data:abf_data_orig
+//  SavePrefix  =  c
+//  SaveHDFolderPath  =  Macintosh HD:Users:taneja:Work:Analysis:MuckeLab:TauKO:mEPSC_CA3_BD_Data:converted
+//  StartX_ms  =  40000
+//  LenX_ms  =  100000
+//  XScaling  =  1e-4
+
+// End comments from pt_Abf2Igor
+
+String SaveHDFolderPath //HDFolderPath, DataWaveMatchStr, SavePrefix
+Variable StartX_ms, LenX_ms, XScaling 
+String Fldrname, SaveNewWaveAs, OldDf, DataFoldersList
+Variable i, j, X0, dX, dL, Nsplits, NumFolders
+
+Wave /T ParNamesW	=$("root:FuncParWaves:pt_Abf2Igor"+"ParNamesW")
+Wave /T ParW		=$("root:FuncParWaves:pt_Abf2Igor"+"ParW")
+
+//DataWaveMatchStr	= ParW[0]
+//HDFolderPath		= ParW[1]
+//IgorFolderPath	= ParW[2]
+//SavePrefix			= ParW[2]
+SaveHDFolderPath	= ParW[0]
+StartX_ms 				= Str2Num(ParW[1])
+LenX_ms 				= Str2Num(ParW[2]) // length of split counting from zero
+XScaling				= Str2Num(ParW[3])
+
+PrintAnalPar("pt_Abf2Igor")
+
+OldDf = GetDataFolder(1)	
+SetDataFolder root:
+DataFoldersList = pt_ReturnObjList("root:", "nm*", 4)
+NumFolders = ItemsinList(DataFoldersList)
+NewPath /O/Q/C SymSaveHDFolderPath, SaveHDFolderPath
+For (i=0; i< NumFolders ; i+=1)
+	FldrName = StringFromList(i, DataFoldersList , ";")
+	If (WaveExists($"root:"+FldrName+":"+"C_RecordA0"))
+		Wave w = $"root:"+FldrName+":"+"C_RecordA0"
+		X0 = dimoffset(w, 0)
+		dL = dimSize(w, 0)
+		dX = dimdelta(w, 0)
+		Print "Length of trace (ms)", FldrName, dL*dX
+		Nsplits = round(dL/(LenX_ms/dX))
+	For (j = 0; j < Nsplits; j +=1)
+		Duplicate /O /R = (StartX_ms + j*LenX_ms, StartX_ms + (j+1)*LenX_ms) w,  $("root:"+FldrName+"_"+pt_PadZeros2IntNum(j, 4))
+		wave w1 = $("root:"+FldrName+"_"+pt_PadZeros2IntNum(j, 4))
+		SetScale /p x, 0, XScaling, w1
+		SaveNewWaveAs=FldrName+"_"+pt_PadZeros2IntNum(j, 4)+".ibw"//SaveHDFolderPath + ":" + SavePrefix+WaveStr+".ibw"
+		
+		Save /O /p=SymSaveHDFolderPath w1 as SaveNewWaveAs
+		Print "Saved files", FldrName+"_"+pt_PadZeros2IntNum(j, 4), "to",  SaveHDFolderPath
+		KillWaves /Z w1
+	EndFor
+	EndIf
+EndFor
+KillPath /Z SymSaveHDFolderPath
+Print "pt_Abf2Igor: Converted  and saved waves, N= ", i
+SetDataFolder OldDf
+End
