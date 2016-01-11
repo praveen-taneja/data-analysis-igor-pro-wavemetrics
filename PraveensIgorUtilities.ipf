@@ -11634,6 +11634,10 @@ Submenu "pclamp analysis"
 	"pt_Abf2Igor", pt_EditFuncPars("pt_Abf2Igor")
 End
 
+Submenu "Map"
+"pt_MapWaves", pt_EditFuncPars("pt_MapWaves")
+End
+
 Submenu "WaveFilters"
 "pt_FilterBadPoints", pt_EditFuncPars("pt_FilterBadPoints")
 "pt_RemoveOutLiers1", pt_EditFuncPars("pt_RemoveOutLiers1")
@@ -11865,6 +11869,11 @@ Submenu "Paired Rec. Analysis"
 End
 
 "pt_SplitEpochs", pt_AnalWInFldrs2("pt_SplitEpochs")
+
+Submenu "Map"
+"pt_MapWaves", pt_AnalWInFldrs2("pt_MapWaves")
+End
+
 SubMenu "WaveFilters"
 "pt_FilterWave1", pt_AnalWInFldrs2("pt_FilterWave1")
 "pt_RemoveOutLiers1", pt_AnalWInFldrs2("pt_RemoveOutLiers1")
@@ -12301,6 +12310,8 @@ Do
 			Break
 		Case "pt_CalIntWidth":	
 			Break
+		Case "pt_MapWaves":	
+			Break	
 		Case "pt_ConctnWFrmFldrs1":
 		Break				
 		Case "pt_ConctnWFrmFldrs":
@@ -27529,3 +27540,50 @@ KillPath /Z SymSaveHDFolderPath
 Print "pt_Abf2Igor: Converted  and saved waves, N= ", i
 SetDataFolder OldDf
 End
+
+
+//===========
+Function pt_MapWaves()
+// for all matching waves in a folder,  
+
+
+String DataWaveMatchStr, SubFldr, Transform
+
+String	WList, WNameStr
+Variable	Numwaves, i
+String  LastUpdatedMM_DD_YYYY = "01/01/2016"
+
+Wave /T AnalParNamesW	=	$pt_GetParWave("pt_MapWaves", "ParNamesW")	
+Wave /T AnalParW			=	$pt_GetParWave("pt_MapWaves", "ParW")
+
+
+If (WaveExists(AnalParW) && WaveExists(AnalParNamesW)==0)
+	Abort "Cudn't find the parameter wave pt_MapWavesParW!!!"
+EndIf
+
+
+Print "*********************************************************"
+Print "pt_MapWaves last updated on", LastUpdatedMM_DD_YYYY
+Print "*********************************************************"
+
+
+DataWaveMatchStr	=	AnalParW[0]
+SubFldr					=	AnalParW[1]
+Transform				= AnalParW[2]
+
+PrintAnalPar("pt_MapWaves")
+
+WList=pt_SortWavesInFolder(DataWaveMatchStr, GetDataFolder(1)+SubFldr)
+Numwaves=ItemsInList(WList, ";")
+
+Print "Transforming waves, N =", Numwaves, WList
+
+For (i=0; i<Numwaves; i+=1)
+	WNameStr=StringFromList(i, WList, ";")
+	//Wave w=$(GetDataFolder(1)+SubFldr+WNameStr)
+	//CommandStr = Transform + WNameStr
+	Execute /Q Transform + GetDataFolder(1)+SubFldr+WNameStr
+EndFor
+
+End
+//===========
